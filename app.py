@@ -7,14 +7,19 @@ That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 
 import sqlite3
 
+import jwt
+import os
+from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 from flask import Flask, g, jsonify, request
 
 from auth_utils import hash_password, verify_password
-
+load_dotenv()
 DATABASE = "recipes.db"
 
 app = Flask(__name__)
 
+app.config["JWT_SECRET"] = os.environ.get("JWT_SECRET")
 
 def get_db():
     if "db" not in g:
@@ -104,9 +109,19 @@ def login():
     if user is None or not verify_password(user["password_hash"], password):
         return jsonify({"error": "invalid username or password"}), 401
 
+    token = jwt.encode(
+        {
+            "sub": str(user["id"]),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        },
+        app.config["JWT_SECRET"],  # <-- match the config key you set
+        algorithm="HS256",
+    )
+
     return jsonify({
         "username": user["username"],
-        "id": user["id"]
+        "id": user["id"],
+        "access_token": token,   # name is fine
     }), 200
   
 
