@@ -8,13 +8,19 @@ That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 import sqlite3
 
 import jwt
+
 import os
+
 from datetime import datetime, timedelta, timezone
+
 from dotenv import load_dotenv
+
 from flask import Flask, g, jsonify, request
 
 from auth_utils import hash_password, verify_password
+
 load_dotenv()
+
 DATABASE = "recipes.db"
 
 app = Flask(__name__)
@@ -141,72 +147,210 @@ def get_recipe(recipe_id):
     return jsonify(recipe_to_dict(row))
 
 
+
+def get_bearer_token():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    return auth_header.split(" ", 1)[1].strip()
+
+
+
 @app.post("/recipes")
 def create_recipe():
+    token = get_bearer_token()
+
+    if token is None:
+        return jsonify({
+            "error": "missing or invalid Authorization header"
+        }), 401
+
+    
+    
+    try:
+        payload = jwt.decode(
+            token,
+            app.config["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+        user_id = payload.get("sub")
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({
+            "error": "token has expired, please log in again"
+        }), 401
+
+    except jwt.PyJWTError:
+        return jsonify({
+            "error": "invalid token"
+        }), 401
+
     data = request.get_json(silent=True)
-    if not data or not data.get("title") or not data.get("ingredients"):
-        return jsonify({"error": "title and ingredients are required"}), 400
+
+    if not isinstance(data, dict) or not data.get("title") or not data.get("ingredients"):
+        return jsonify({
+            "error": "title and ingredients are required"
+        }), 400
+
+
+
+    
     db = get_db()
     try:
         cur = db.execute(
-            "INSERT INTO recipes (title, ingredients, instructions, is_public)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO recipes (title, ingredients, instructions, is_public, owner_id)"
+            " VALUES (?, ?, ?, ?, ?)",
             (
                 data["title"],
                 data["ingredients"],
                 data.get("instructions", ""),
                 1 if data.get("is_public", True) else 0,
+                user_id,
             ),
         )
         db.commit()
     except sqlite3.IntegrityError:
         return jsonify({"error": "a recipe with that title already exists"}), 409
+
     row = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (cur.lastrowid,)
     ).fetchone()
+
     return jsonify(recipe_to_dict(row)), 201
+
+
+
 
 
 @app.patch("/recipes/<int:recipe_id>")
 def update_recipe(recipe_id):
+    token = get_bearer_token()
+
+    if token is None:
+        return jsonify({
+            "error": "missing or invalid Authorization header"
+        }), 401
+
+    try:
+        payload = jwt.decode(
+            token,
+            app.config["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+        user_id = payload.get("sub")
+    except jwt.PyJWTError:
+        return jsonify({"error": "invalid or expired token"}), 401
+
+    
+    db = get_db()
+
+    # Load the recipe to check ownership
+    recipe = db.execute(
+        "SELECT * FROM recipes WHERE id = ?",
+        (recipe_id,)
+    ).fetchone()
+
+    if recipe is None:
+        return jsonify({"error": "recipe not found"}), 404
+
+    # Only the owner can update this recipe
+    if recipe["owner_id"] != int(user_id):
+        return jsonify({
+            "error": "you do not have permission to modify this recipe"
+        }), 403
+
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "a JSON body is required"}), 400
+
     fields, values = [], []
     for column in ("title", "ingredients", "instructions"):
         if column in data:
             fields.append(f"{column} = ?")
             values.append(data[column])
+
     if "is_public" in data:
         fields.append("is_public = ?")
         values.append(1 if data["is_public"] else 0)
+
     if not fields:
         return jsonify({"error": "nothing to update"}), 400
+
     values.append(recipe_id)
-    db = get_db()
+    
+
     try:
         cur = db.execute(
             f"UPDATE recipes SET {', '.join(fields)} WHERE id = ?", values
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return jsonify({"error": "a recipe with that title already exists"}), 409
+        return jsonify({
+            "error": "a recipe with that title already exists"
+        }), 409
+
     if cur.rowcount == 0:
         return jsonify({"error": "recipe not found"}), 404
+
     row = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
     ).fetchone()
+
     return jsonify(recipe_to_dict(row))
+
+
 
 
 @app.delete("/recipes/<int:recipe_id>")
 def delete_recipe(recipe_id):
+    token = get_bearer_token()
+
+    if token is None:
+        return jsonify({
+            "error": "missing or invalid Authorization header"
+        }), 401
+
+    try:
+        payload = jwt.decode(
+            token,
+            app.config["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+        user_id = int(payload.get("sub"))
+    except (jwt.PyJWTError, ValueError, TypeError):
+        return jsonify({"error": "invalid or expired token"}), 401
+
     db = get_db()
-    cur = db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
+
+    # Load the recipe before attempting to delete it
+    recipe = db.execute(
+        "SELECT * FROM recipes WHERE id = ?",
+        (recipe_id,)
+    ).fetchone()
+
+    # Recipe doesn't exist
+    if recipe is None:
+        return jsonify({"error": "recipe not found"}), 404
+
+    # Only the owner can delete this recipe
+    if recipe["owner_id"] != user_id:
+        return jsonify({
+            "error": "you do not have permission to delete this recipe"
+        }), 403
+
+    # Owner verified: delete the recipe
+    cur = db.execute(
+        "DELETE FROM recipes WHERE id = ? AND owner_id = ?",
+        (recipe_id, user_id)
+    )
     db.commit()
+
     if cur.rowcount == 0:
         return jsonify({"error": "recipe not found"}), 404
+
     return "", 204
+
 
 
 
