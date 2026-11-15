@@ -238,8 +238,9 @@ def update_recipe(recipe_id):
             app.config["JWT_SECRET"],
             algorithms=["HS256"],
         )
-        user_id = payload.get("sub")
-    except jwt.PyJWTError:
+        user_id = int(payload["sub"])
+        role = payload.get("role", "user")
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         return jsonify({"error": "invalid or expired token"}), 401
 
     
@@ -254,18 +255,9 @@ def update_recipe(recipe_id):
     if recipe is None:
         return jsonify({"error": "recipe not found"}), 404
 
-    # Look up the authenticated user's role
-    user = db.execute(
-        "SELECT role FROM users WHERE id = ?",
-        (user_id,)
-    ).fetchone()
-
-    if user is None:
-        return jsonify({"error": "invalid user"}), 401
-
     # Allow the recipe owner OR an admin to update
-    is_owner = recipe["owner_id"] == int(user_id)
-    is_admin = user["role"] == "admin"
+    is_owner = recipe["owner_id"] == user_id
+    is_admin = role == "admin"
 
     if not (is_owner or is_admin):
         return jsonify({
@@ -330,7 +322,8 @@ def delete_recipe(recipe_id):
             app.config["JWT_SECRET"],
             algorithms=["HS256"],
         )
-        user_id = int(payload.get("sub"))
+        user_id = int(payload["sub"])
+        role = payload.get("role", "user")
     except (jwt.PyJWTError, ValueError, TypeError):
         return jsonify({"error": "invalid or expired token"}), 401
 
@@ -346,18 +339,10 @@ def delete_recipe(recipe_id):
     if recipe is None:
         return jsonify({"error": "recipe not found"}), 404
 
-        # Look up the authenticated user's role
-    user = db.execute(
-        "SELECT role FROM users WHERE id = ?",
-        (user_id,)
-    ).fetchone()
-
-    if user is None:
-        return jsonify({"error": "invalid user"}), 401
 
     # Allow the recipe owner OR an admin to delete
     is_owner = recipe["owner_id"] == user_id
-    is_admin = user["role"] == "admin"
+    is_admin = role == "admin"
 
     if not (is_owner or is_admin):
         return jsonify({
