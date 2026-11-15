@@ -349,7 +349,7 @@ def delete_recipe(recipe_id):
             "error": "you do not have permission to delete this recipe"
         }), 403
 
-        # Permission verified: owner or admin may delete
+    # Permission verified: owner or admin may delete
     cur = db.execute(
         "DELETE FROM recipes WHERE id = ?",
         (recipe_id,)
@@ -360,7 +360,6 @@ def delete_recipe(recipe_id):
         return jsonify({"error": "recipe not found"}), 404
 
     return "", 204
-
 
 
 
