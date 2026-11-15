@@ -192,35 +192,11 @@ def token_required(f):
 
 
 
+
 @app.post("/recipes")
-def create_recipe():
-    token = get_bearer_token()
-
-    if token is None:
-        return jsonify({
-            "error": "missing or invalid Authorization header"
-        }), 401
-
-    
-    
-    try:
-        payload = jwt.decode(
-            token,
-            app.config["JWT_SECRET"],
-            algorithms=["HS256"],
-        )
-        user_id = payload.get("sub")
-
-    except jwt.ExpiredSignatureError:
-        return jsonify({
-            "error": "token has expired, please log in again"
-        }), 401
-
-    except jwt.PyJWTError:
-        return jsonify({
-            "error": "invalid token"
-        }), 401
-
+@token_required
+def create_recipe(user_id, role):
+    # Authentication is handled by @token_required
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict) or not data.get("title") or not data.get("ingredients"):
@@ -228,9 +204,6 @@ def create_recipe():
             "error": "title and ingredients are required"
         }), 400
 
-
-
-    
     db = get_db()
     try:
         cur = db.execute(
