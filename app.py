@@ -9,6 +9,8 @@ import sqlite3
 
 import jwt
 
+from functools import wraps
+
 import os
 
 from datetime import datetime, timedelta, timezone
@@ -155,6 +157,39 @@ def get_bearer_token():
         return None
     return auth_header.split(" ", 1)[1].strip()
 
+def token_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        token = get_bearer_token()
+
+        if token is None:
+            return jsonify({
+                "error": "missing or invalid Authorization header"
+            }), 401
+
+        try:
+            payload = jwt.decode(
+                token,
+                app.config["JWT_SECRET"],
+                algorithms=["HS256"],
+            )
+            user_id = int(payload["sub"])
+            role = payload.get("role", "user")
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({
+                "error": "token has expired, please log in again"
+            }), 401
+
+        except (jwt.PyJWTError, KeyError, ValueError, TypeError):
+            return jsonify({
+                "error": "invalid or expired token"
+            }), 401
+
+        return f(*args, user_id=user_id, role=role, **kwargs)
+
+    return wrapper
+
 
 
 @app.post("/recipes")
@@ -224,7 +259,8 @@ def create_recipe():
 
 
 @app.patch("/recipes/<int:recipe_id>")
-def update_recipe(recipe_id):
+@token_required
+def update_recipe(recipe_id, user_id, role):
     token = get_bearer_token()
 
     if token is None:
