@@ -261,23 +261,7 @@ def create_recipe():
 @app.patch("/recipes/<int:recipe_id>")
 @token_required
 def update_recipe(recipe_id, user_id, role):
-    token = get_bearer_token()
-
-    if token is None:
-        return jsonify({
-            "error": "missing or invalid Authorization header"
-        }), 401
-
-    try:
-        payload = jwt.decode(
-            token,
-            app.config["JWT_SECRET"],
-            algorithms=["HS256"],
-        )
-        user_id = int(payload["sub"])
-        role = payload.get("role", "user")
-    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
-        return jsonify({"error": "invalid or expired token"}), 401
+    # Token validation is now handled by the @token_required decorator
 
     
     db = get_db()
@@ -344,24 +328,10 @@ def update_recipe(recipe_id, user_id, role):
 
 
 @app.delete("/recipes/<int:recipe_id>")
-def delete_recipe(recipe_id):
-    token = get_bearer_token()
-
-    if token is None:
-        return jsonify({
-            "error": "missing or invalid Authorization header"
-        }), 401
-
-    try:
-        payload = jwt.decode(
-            token,
-            app.config["JWT_SECRET"],
-            algorithms=["HS256"],
-        )
-        user_id = int(payload["sub"])
-        role = payload.get("role", "user")
-    except (jwt.PyJWTError, ValueError, TypeError):
-        return jsonify({"error": "invalid or expired token"}), 401
+@token_required
+def delete_recipe(recipe_id, user_id, role):
+    # Token validation is now handled by the @token_required decorator
+    # No need to manually extract user_id and role from the token anymore
 
     db = get_db()
 
