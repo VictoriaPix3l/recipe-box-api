@@ -108,21 +108,22 @@ def login():
 
     db = get_db()
     user = db.execute(
-        "SELECT id, username, password_hash FROM users WHERE username = ?",
-        (username.strip(),)
+    "SELECT id, username, password_hash, role FROM users WHERE username = ?",
+    (username.strip(),)
     ).fetchone()
 
     if user is None or not verify_password(user["password_hash"], password):
         return jsonify({"error": "invalid username or password"}), 401
 
     token = jwt.encode(
-        {
-            "sub": str(user["id"]),
-            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
-        },
-        app.config["JWT_SECRET"],  # <-- match the config key you set
-        algorithm="HS256",
-    )
+    {
+        "sub": str(user["id"]),
+        "role": user["role"],  # <-- add this line
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    },
+    app.config["JWT_SECRET"],
+    algorithm="HS256",
+)
 
     return jsonify({
         "username": user["username"],
