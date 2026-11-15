@@ -253,8 +253,20 @@ def update_recipe(recipe_id):
     if recipe is None:
         return jsonify({"error": "recipe not found"}), 404
 
-    # Only the owner can update this recipe
-    if recipe["owner_id"] != int(user_id):
+    # Look up the authenticated user's role
+    user = db.execute(
+        "SELECT role FROM users WHERE id = ?",
+        (user_id,)
+    ).fetchone()
+
+    if user is None:
+        return jsonify({"error": "invalid user"}), 401
+
+    # Allow the recipe owner OR an admin to update
+    is_owner = recipe["owner_id"] == int(user_id)
+    is_admin = user["role"] == "admin"
+
+    if not (is_owner or is_admin):
         return jsonify({
             "error": "you do not have permission to modify this recipe"
         }), 403
@@ -333,16 +345,28 @@ def delete_recipe(recipe_id):
     if recipe is None:
         return jsonify({"error": "recipe not found"}), 404
 
-    # Only the owner can delete this recipe
-    if recipe["owner_id"] != user_id:
+        # Look up the authenticated user's role
+    user = db.execute(
+        "SELECT role FROM users WHERE id = ?",
+        (user_id,)
+    ).fetchone()
+
+    if user is None:
+        return jsonify({"error": "invalid user"}), 401
+
+    # Allow the recipe owner OR an admin to delete
+    is_owner = recipe["owner_id"] == user_id
+    is_admin = user["role"] == "admin"
+
+    if not (is_owner or is_admin):
         return jsonify({
             "error": "you do not have permission to delete this recipe"
         }), 403
 
-    # Owner verified: delete the recipe
+        # Permission verified: owner or admin may delete
     cur = db.execute(
-        "DELETE FROM recipes WHERE id = ? AND owner_id = ?",
-        (recipe_id, user_id)
+        "DELETE FROM recipes WHERE id = ?",
+        (recipe_id,)
     )
     db.commit()
 
